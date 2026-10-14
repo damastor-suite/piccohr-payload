@@ -1,0 +1,58 @@
+diff --git a/dist/auth/strategies/local/generatePasswordSaltHash.js b/dist/auth/strategies/local/generatePasswordSaltHash.js
+index 7eb8b1c2e274e5c58736c7b29a77424ed91de0fc..3f22807eafc637a522d2068dc72886c87c2844e8 100644
+--- a/dist/auth/strategies/local/generatePasswordSaltHash.js
++++ b/dist/auth/strategies/local/generatePasswordSaltHash.js
+@@ -1,9 +1,12 @@
+ import crypto from 'crypto';
+ import { ValidationError } from '../../../errors/index.js';
+ import { password } from '../../../fields/validations.js';
+-const currentPasswordHashPrefix = 'pbkdf2-sha256-v1:';
+-const currentPasswordHashIterations = 600000;
++// Workers caps PBKDF2 at 100000 iterations. Keep Node's default unchanged.
++const currentPasswordHashIterations = typeof navigator !== 'undefined' && navigator.userAgent === 'Cloudflare-Workers' ? 100000 : 600000;
+ const currentPasswordHashKeyLength = 32;
++// Embed parameters so Workers-created hashes also verify in Node.
++const currentPasswordHashRegex = /^pbkdf2-sha256-v2-i(100000|600000)-l32:([0-9a-f]{64})$/;
++const previousPasswordHashPrefix = 'pbkdf2-sha256-v1:';
+ const legacyPasswordHashIterations = 25000;
+ const legacyPasswordHashKeyLength = 512;
+ export const generatePasswordSaltHash = async ({ collection, isPasswordAuthenticated, password: passwordToSet, req })=>{
+@@ -44,17 +47,25 @@ export const generatePasswordSaltHash = async ({ collection, isPasswordAuthentic
+         password: passwordToSet,
+         salt
+     });
+-    const hash = `${currentPasswordHashPrefix}${hashRaw.toString('hex')}`;
++    const hash = `pbkdf2-sha256-v2-i${currentPasswordHashIterations}-l${currentPasswordHashKeyLength}:${hashRaw.toString('hex')}`;
+     return {
+         hash,
+         salt
+     };
+ };
+ export const getPasswordHashParameters = (hash)=>{
+-    if (isCurrentPasswordHash(hash)) {
++    const match = currentPasswordHashRegex.exec(hash);
++    if (match) {
+         return {
+-            hash: hash.slice(currentPasswordHashPrefix.length),
+-            iterations: currentPasswordHashIterations,
++            hash: match[2],
++            iterations: Number(match[1]),
++            keyLength: currentPasswordHashKeyLength
++        };
++    }
++    if (hash.startsWith(previousPasswordHashPrefix)) {
++        return {
++            hash: hash.slice(previousPasswordHashPrefix.length),
++            iterations: 600000,
+             keyLength: currentPasswordHashKeyLength
+         };
+     }
+@@ -64,7 +75,7 @@ export const getPasswordHashParameters = (hash)=>{
+         keyLength: legacyPasswordHashKeyLength
+     };
+ };
+-export const isCurrentPasswordHash = (hash)=>typeof hash === 'string' && hash.startsWith(currentPasswordHashPrefix);
++export const isCurrentPasswordHash = (hash)=>typeof hash === 'string' && currentPasswordHashRegex.test(hash);
+ function randomBytes() {
+     return new Promise((resolve, reject)=>crypto.randomBytes(32, (err, saltBuffer)=>err ? reject(err) : resolve(saltBuffer)));
+ }

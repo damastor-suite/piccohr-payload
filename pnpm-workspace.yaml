@@ -1,0 +1,10 @@
+packages:
+  - '.'
+
+onlyBuiltDependencies:
+  - sharp
+  - esbuild
+  - unrs-resolver
+
+patchedDependencies:
+  payload@3.90.0: patches/payload@3.90.0.patch

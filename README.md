@@ -50,6 +50,29 @@ The Worker will have direct access to a D1 SQLite database which Wrangler can co
 
 You can enable read replicas by adding `readReplicas: 'first-primary'` in the DB adapter and then enabling it on your D1 Cloudflare dashboard. Read more about this feature on [our docs](https://payloadcms.com/docs/database/sqlite#d1-read-replicas).
 
+### Cloudflare password hashing compatibility
+
+Payload 3.90.0 requests 600,000 PBKDF2-SHA256 iterations, but hosted Cloudflare
+Workers rejects more than 100,000. This breaks initial admin registration.
+The version-pinned `patches/payload@3.90.0.patch` follows the approach in
+[Payload PR #18276](https://github.com/payloadcms/payload/pull/18276): new Workers
+passwords use 100,000 iterations, while Node.js retains 600,000. Hashes include
+their iteration count so Workers-created passwords also work in Node.js.
+This reduces password hashing strength on Workers to its supported limit.
+
+The project pins pnpm 10.11.1, matching the Cloudflare Workers build image.
+Patch and build-script settings live in `pnpm-workspace.yaml`; keep this file
+with `package.json`, the patch, and `pnpm-lock.yaml` in the build root.
+Install with pnpm so the patch is applied, then run `pnpm test:auth` to verify
+hash creation, login, and compatibility. Rebuild and redeploy the Worker with
+`pnpm deploy:app` after installing. No database migration is needed for this fix.
+
+Existing unprefixed hashes retain their original 25,000 iterations. Existing
+`pbkdf2-sha256-v1:` hashes retain 600,000 iterations and therefore still cannot
+authenticate on hosted Workers. Accounts created in Node.js also use 600,000
+iterations; create accounts through the Worker when they need to log in there.
+When upgrading Payload, review the upstream fix before removing this patch.
+
 ## Working with Cloudflare
 
 Firstly, after installing dependencies locally you need to authenticate with Wrangler by running:
